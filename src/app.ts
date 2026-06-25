@@ -1,0 +1,75 @@
+import express, { Express, Request, Response, NextFunction } from 'express';
+import cors from 'cors';
+import cookieParser from 'cookie-parser';
+import authRoutes from './features/auth/auth.routes';
+import userRoutes from './features/users/users.routes';
+import { errorMiddleware } from './middleware/error.middleware';
+import { env } from './config/env';
+import departmentRoutes from './features/departments/departments.routes';
+import streamRouter from './features/stream/stream.route';
+
+const app: Express = express();
+
+// ── Global Middlewares ────────────────────────────────────────────────────────
+
+app.use(
+  cors({
+    origin: env.CLIENT_URL,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-With',
+      'Accept',
+      'idempotency-key',
+    ],
+  })
+);
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
+
+// ── Health check (used by keep-alive ping + uptime monitors) ─────────────────
+
+app.get('/api/v1/health', (_req: Request, res: Response) => {
+  res.json({ status: 'ok', timestamp: new Date() });
+});
+
+// ── Root ──────────────────────────────────────────────────────────────────────
+
+app.get('/', (_req: Request, res: Response) => {
+  res.json({ status: 'healthy', message: 'API is running smoothly.' });
+});
+
+// ── Feature Routes ────────────────────────────────────────────────────────────
+
+app.use('/api/v1/auth',        authRoutes);
+app.use('/api/v1/users',       userRoutes);
+app.use('/api/v1/departments', departmentRoutes);
+app.use('/api/v1/stream',      streamRouter);
+
+// ── 404 ───────────────────────────────────────────────────────────────────────
+
+app.use((_req: Request, res: Response, _next: NextFunction) => {
+  res.status(404).json({ error: 'Route Not Found' });
+});
+
+// ── Global error handler ──────────────────────────────────────────────────────
+
+app.use(errorMiddleware);
+
+// ── Keep-alive ping (prevents Render free tier from sleeping) ─────────────────
+
+if (env.NODE_ENV === 'production') {
+  setInterval(async () => {
+    try {
+      await fetch(`${env.API_URL}/api/v1/health`);
+      console.log('🏓 Keep-alive ping sent');
+    } catch (err) {
+      console.warn('⚠️ Keep-alive ping failed:', err);
+    }
+  }, 10 * 60 * 1000); // every 10 minutes
+}
+
+export default app;
